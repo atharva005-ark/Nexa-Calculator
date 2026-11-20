@@ -1,0 +1,6 @@
+{
+  "name": "NEXA Calculator",
+  "description": "Next-generation smart scientific calculator with symbolic math, 2D graphing, AI math solver, camera OCR, voice input, and financial/engineering tools.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

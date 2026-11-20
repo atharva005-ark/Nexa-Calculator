@@ -1,0 +1,234 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+    /* Default Accent: Cyan Blue */
+    --nexa-accent-from: #2563EB;
+    --nexa-accent-via: #7C3AED;
+    --nexa-accent-to: #0891B2;
+    --nexa-accent-solid: #06B6D4;
+    --nexa-accent-text: #2563EB;
+    --nexa-accent-ring: rgba(6, 182, 212, 0.35);
+  }
+
+  html.dark {
+    --nexa-accent-text: #22D3EE;
+  }
+
+  html[data-accent="violet-indigo"] {
+    --nexa-accent-from: #7C3AED;
+    --nexa-accent-via: #6366F1;
+    --nexa-accent-to: #A855F7;
+    --nexa-accent-solid: #8B5CF6;
+    --nexa-accent-text: #7C3AED;
+    --nexa-accent-ring: rgba(139, 92, 246, 0.35);
+  }
+
+  html.dark[data-accent="violet-indigo"] {
+    --nexa-accent-text: #C084FC;
+  }
+
+  html[data-accent="emerald-teal"] {
+    --nexa-accent-from: #059669;
+    --nexa-accent-via: #0D9488;
+    --nexa-accent-to: #06B6D4;
+    --nexa-accent-solid: #10B981;
+    --nexa-accent-text: #059669;
+    --nexa-accent-ring: rgba(16, 185, 129, 0.35);
+  }
+
+  html.dark[data-accent="emerald-teal"] {
+    --nexa-accent-text: #34D399;
+  }
+
+  html[data-accent="amber-orange"] {
+    --nexa-accent-from: #D97706;
+    --nexa-accent-via: #EA580C;
+    --nexa-accent-to: #F59E0B;
+    --nexa-accent-solid: #F59E0B;
+    --nexa-accent-text: #D97706;
+    --nexa-accent-ring: rgba(245, 158, 11, 0.35);
+  }
+
+  html.dark[data-accent="amber-orange"] {
+    --nexa-accent-text: #FBBF24;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  code, pre, .font-mono, .tabular-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom Accent & Tactile Utilities (GPU-composited only, <= 200ms) */
+.nexa-gradient-bg {
+  background-image: linear-gradient(
+    90deg,
+    var(--nexa-accent-from),
+    var(--nexa-accent-via),
+    var(--nexa-accent-to)
+  );
+}
+
+.nexa-gradient-text {
+  background-image: linear-gradient(
+    90deg,
+    var(--nexa-accent-from),
+    var(--nexa-accent-via),
+    var(--nexa-accent-to)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.nexa-accent-text {
+  color: var(--nexa-accent-text);
+}
+
+.nexa-accent-solid-bg {
+  background-color: var(--nexa-accent-solid);
+}
+
+.nexa-tactile {
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), opacity 150ms ease;
+}
+
+.nexa-tactile:active {
+  transform: scale(0.97);
+}
+
+/* Android / Mobile Safe Area Utilities */
+@layer utilities {
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), 0px);
+  }
+
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+  }
+
+  .pl-safe {
+    padding-left: max(env(safe-area-inset-left, 0px), 0px);
+  }
+
+  .pr-safe {
+    padding-right: max(env(safe-area-inset-right, 0px), 0px);
+  }
+
+  .px-nav-safe {
+    padding-left: max(0.25rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.25rem, env(safe-area-inset-right, 0px));
+  }
+
+  .pb-sheet-safe {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (max-width: 1023px) {
+    .pb-mobile-nav-home {
+      padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .pb-mobile-nav {
+      padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+}
+
+/* KaTeX Overflow & Dark/Light Tuning */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+  margin: 0.25rem 0 !important;
+}
+
+/* Custom clean scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+@media (max-width: 1023px) and (min-height: 760px) {
+  .nexa-mobile-home-calc .nexa-mobile-main-key {
+    min-height: 46px;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-util-key {
+    min-height: 38px;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-mem-key {
+    min-height: 34px;
+  }
+}
+
+@media (max-width: 1023px) and (max-height: 650px) {
+  .nexa-mobile-home-calc {
+    padding: 0.5rem;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-calc-display {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-keypad {
+    gap: 0.25rem;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-main-key {
+    min-height: 36px;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-util-key {
+    min-height: 30px;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-mem-key {
+    min-height: 26px;
+  }
+}
+
+@media (max-width: 1023px) and (max-height: 585px) {
+  .nexa-mobile-home-calc .nexa-mobile-main-key {
+    min-height: 32px;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-util-key {
+    min-height: 28px;
+  }
+  .nexa-mobile-home-calc .nexa-mobile-mem-key {
+    min-height: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
