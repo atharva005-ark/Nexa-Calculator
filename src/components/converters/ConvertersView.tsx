@@ -1,8 +1,12 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeftRight, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { UNIT_CATEGORIES, convertUnit, type UnitCategoryId } from '../../lib/math/unitConverter';
 import { getCachedCurrency, saveCachedCurrency } from '../../lib/storage/indexedDb';
 import { formatNumericResult } from '../../lib/math/calculatorEngine';
+import {
+  ExchangeRateError,
+  fetchClientExchangeRates,
+} from '../../lib/currency/exchangeRateService';
 
 const CURRENCIES = [
   { code: 'USD', name: 'US Dollar' },
@@ -47,6 +51,8 @@ export const ConvertersView: React.FC = () => {
   const [fxLoading, setFxLoading] = useState(false);
   const [fxError, setFxError] = useState<string | null>(null);
 
+  const fxRequestIdRef = useRef(0);
+
   const handleCategoryChange = (id: UnitCategoryId) => {
     const cat = UNIT_CATEGORIES.find((c) => c.id === id) || UNIT_CATEGORIES[0];
     setCategoryId(cat.id);
@@ -54,56 +60,61 @@ export const ConvertersView: React.FC = () => {
     setToUnit(cat.units[Math.min(1, cat.units.length - 1)].id);
   };
 
-  const fetchRates = useCallback(async (base: string) => {
+  const fetchRates = useCallback(async (base: string, forceRefresh = false) => {
+    const reqId = ++fxRequestIdRef.current;
     setFxLoading(true);
     setFxError(null);
     setIsHistoricalCache(false);
 
     try {
-      const resp = await fetch(`/api/currency?base=${encodeURIComponent(base)}`);
-      const data = await resp.json();
-      if (!resp.ok || !data.rates) {
-        throw new Error(data.error || 'Live exchange rate service unavailable');
-      }
+      const data = await fetchClientExchangeRates(base, { forceRefresh });
+      if (reqId !== fxRequestIdRef.current) return;
+
       setRates(data.rates);
       setRateTimestamp(data.timestamp);
-      setRateProvider(data.provider || 'Live FX API');
+      setRateProvider(data.provider);
       setIsHistoricalCache(false);
       await saveCachedCurrency({
-        base,
+        base: data.base,
         rates: data.rates,
         timestamp: data.timestamp,
-        provider: data.provider || 'Live FX API',
+        provider: data.provider,
         cachedAt: Date.now(),
       });
     } catch (err) {
+      if (reqId !== fxRequestIdRef.current) return;
+
       const cached = await getCachedCurrency(base);
-      if (cached) {
+      if (reqId !== fxRequestIdRef.current) return;
+
+      if (cached && cached.rates && Object.keys(cached.rates).length > 0) {
         setRates(cached.rates);
         setRateTimestamp(cached.timestamp);
         setRateProvider(`${cached.provider} (Cached Historical Rate)`);
         setIsHistoricalCache(true);
         setFxError(
-          `Live exchange rate API unavailable. Displaying previously cached historical rates from ${new Date(
+          `Live exchange rate service is temporarily unavailable. Showing previously cached rates from ${new Date(
             cached.cachedAt
           ).toLocaleString()}.`
         );
       } else {
         setRates(null);
-        setFxError(
-          err instanceof Error
-            ? `${err.message}. Conversion rate is currently unavailable.`
-            : 'Conversion rate is currently unavailable.'
-        );
+        const friendlyMessage =
+          err instanceof ExchangeRateError
+            ? err.message
+            : 'Unable to fetch live exchange rates right now. Please check your internet connection and tap Refresh Rate to try again.';
+        setFxError(friendlyMessage);
       }
     } finally {
-      setFxLoading(false);
+      if (reqId === fxRequestIdRef.current) {
+        setFxLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     if (tab === 'currency') {
-      void fetchRates(fromCurr);
+      void fetchRates(fromCurr, false);
     }
   }, [tab, fromCurr, fetchRates]);
 
@@ -291,9 +302,9 @@ export const ConvertersView: React.FC = () => {
             </h2>
             <button
               type="button"
-              onClick={() => fetchRates(fromCurr)}
+              onClick={() => void fetchRates(fromCurr, true)}
               disabled={fxLoading}
-              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer"
+              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer disabled:opacity-60"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${fxLoading ? 'animate-spin' : ''}`} />
               <span>Refresh Rate</span>
@@ -377,12 +388,21 @@ export const ConvertersView: React.FC = () => {
                 1 {fromCurr} = {targetRate.toFixed(6)} {toCurr}
                 {isHistoricalCache ? ' (Historical Cached Rate)' : ''}
               </div>
-              <div className="font-mono tabular-nums text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
+              <div className="font-mono tabular-nums text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white break-words">
                 {formatNumericResult(convertedFxVal, { precision: 4 })} {toCurr}
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 Last Updated: {rateTimestamp} · Source: {rateProvider}
               </div>
+            </div>
+          )}
+
+          {!fxLoading && !fxError && rates && typeof targetRate !== 'number' && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3.5 text-xs text-amber-700 dark:text-amber-300">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Exchange rate for {fromCurr} to {toCurr} is not available from the current provider. Tap Refresh Rate to retry.
+              </span>
             </div>
           )}
         </div>

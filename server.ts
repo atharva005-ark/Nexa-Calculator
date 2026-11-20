@@ -5,6 +5,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { AI_SOLVER_ENABLED } from './src/config/features.ts';
+import {
+  ExchangeRateError,
+  fetchUpstreamExchangeRates,
+  normalizeCurrencyCode,
+} from './src/lib/currency/exchangeRateService.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,11 +47,13 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/currency', async (req, res) => {
-  const baseRaw = typeof req.query.base === 'string' ? req.query.base.toUpperCase().trim() : 'USD';
-  const base = /^[A-Z]{3}$/.test(baseRaw) ? baseRaw : 'USD';
+  const baseRaw = typeof req.query.base === 'string' ? req.query.base : 'USD';
+  const base = normalizeCurrencyCode(baseRaw);
+  const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
 
   const cached = currencyCache.get(base);
-  if (cached && Date.now() - cached.fetchedAt < CURRENCY_CACHE_TTL_MS) {
+  if (!forceRefresh && cached && Date.now() - cached.fetchedAt < CURRENCY_CACHE_TTL_MS) {
+    res.setHeader('Cache-Control', 'public, max-age=300');
     return res.json({
       base: cached.base,
       rates: cached.rates,
@@ -56,86 +63,35 @@ app.get('/api/currency', async (req, res) => {
     });
   }
 
-  // Try open.er-api.com first, then frankfurter.app
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    const resp = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(base)}`, {
-      signal: controller.signal,
+    const liveData = await fetchUpstreamExchangeRates(base, {
+      timeoutMs: 7000,
+      forceRefresh,
     });
-    clearTimeout(timer);
-
-    if (resp.ok) {
-      const data = (await resp.json()) as {
-        result?: string;
-        base_code?: string;
-        time_last_update_utc?: string;
-        rates?: Record<string, number>;
-      };
-      if (data && data.result === 'success' && data.rates) {
-        const entry = {
-          base: data.base_code || base,
-          rates: data.rates,
-          timestamp: data.time_last_update_utc || new Date().toUTCString(),
-          provider: 'ExchangeRate-API (Open Access)',
-          fetchedAt: Date.now(),
-        };
-        currencyCache.set(base, entry);
-        return res.json({
-          base: entry.base,
-          rates: entry.rates,
-          timestamp: entry.timestamp,
-          provider: entry.provider,
-          isLive: true,
-        });
-      }
-    }
-  } catch {
-    // Fall through to secondary provider
-  }
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    const resp = await fetch(`https://api.frankfurter.app/latest?from=${encodeURIComponent(base)}`, {
-      signal: controller.signal,
+    currencyCache.set(base, {
+      base: liveData.base,
+      rates: liveData.rates,
+      timestamp: liveData.timestamp,
+      provider: liveData.provider,
+      fetchedAt: Date.now(),
     });
-    clearTimeout(timer);
+    res.setHeader('Cache-Control', forceRefresh ? 'no-store' : 'public, max-age=300');
+    return res.json(liveData);
+  } catch (err) {
+    const isRateLimited = err instanceof ExchangeRateError && err.code === 'RATE_LIMITED';
+    const message =
+      err instanceof ExchangeRateError
+        ? err.message
+        : 'Live exchange rate service is currently unreachable. Cached historical rates will be used if available.';
+    const code = err instanceof ExchangeRateError ? err.code : 'CURRENCY_UPSTREAM_UNAVAILABLE';
 
-    if (resp.ok) {
-      const data = (await resp.json()) as {
-        base?: string;
-        date?: string;
-        rates?: Record<string, number>;
-      };
-      if (data && data.rates) {
-        const rates = { ...data.rates, [base]: 1 };
-        const entry = {
-          base: data.base || base,
-          rates,
-          timestamp: data.date ? `${data.date} (ECB Daily Reference)` : new Date().toUTCString(),
-          provider: 'Frankfurter (European Central Bank)',
-          fetchedAt: Date.now(),
-        };
-        currencyCache.set(base, entry);
-        return res.json({
-          base: entry.base,
-          rates: entry.rates,
-          timestamp: entry.timestamp,
-          provider: entry.provider,
-          isLive: true,
-        });
-      }
-    }
-  } catch {
-    // Both upstream providers unavailable
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(isRateLimited ? 429 : 503).json({
+      success: false,
+      error: message,
+      code,
+    });
   }
-
-  return res.status(500).json({
-    success: false,
-    error: 'Live exchange rate service is currently unreachable. Cached historical rates will be used if available.',
-    code: 'CURRENCY_UPSTREAM_UNAVAILABLE',
-  });
 });
 
 function parseGeminiError(err: unknown): {
