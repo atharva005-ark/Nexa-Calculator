@@ -10,6 +10,12 @@ import {
   fetchUpstreamExchangeRates,
   normalizeCurrencyCode,
 } from './src/lib/currency/exchangeRateService.ts';
+import {
+  AdminAuthError,
+  verifyAdminBearerToken,
+  type VerifiedAdminIdentity,
+} from './src/lib/admin/adminAuth.ts';
+import { fetchGA4Analytics, getGA4ConfigStatus } from './src/lib/analytics/ga4Server.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +50,47 @@ const CURRENCY_CACHE_TTL_MS = 15 * 60 * 1000;
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', app: 'NEXA Calculator' });
+});
+
+interface AdminAuthedRequest extends express.Request {
+  adminUser?: VerifiedAdminIdentity;
+}
+
+async function requireAdmin(
+  req: AdminAuthedRequest,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    req.adminUser = await verifyAdminBearerToken(req.headers.authorization);
+    return next();
+  } catch (err) {
+    const status = err instanceof AdminAuthError ? err.status : 401;
+    const code = err instanceof AdminAuthError ? err.code : 'ADMIN_AUTH_FAILED';
+    const message =
+      err instanceof AdminAuthError ? err.message : 'Administrator authentication required.';
+    return res.status(status).json({
+      authenticated: false,
+      success: false,
+      error: message,
+      code,
+    });
+  }
+}
+
+app.get('/api/admin/session', requireAdmin, (req: AdminAuthedRequest, res) => {
+  const ga4 = getGA4ConfigStatus();
+  return res.json({
+    authenticated: true,
+    admin: req.adminUser,
+    ga4Configured: ga4.configured,
+  });
+});
+
+app.get('/api/admin/analytics', requireAdmin, async (_req: AdminAuthedRequest, res) => {
+  const analytics = await fetchGA4Analytics();
+  return res.json(analytics);
 });
 
 app.get('/api/currency', async (req, res) => {

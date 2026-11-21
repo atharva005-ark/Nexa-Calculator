@@ -12,6 +12,7 @@ import {
   Home,
   LayoutGrid,
   LineChart,
+  MessageSquare,
   Mic,
   Repeat,
   Settings,
@@ -40,9 +41,16 @@ import { MatrixCalculatorView } from './components/matrix/MatrixCalculatorView';
 import { VoiceCalculatorModal } from './components/tools/VoiceCalculatorModal';
 import { CameraScannerModal } from './components/tools/CameraScannerModal';
 import { FormulaLibraryModal } from './components/tools/FormulaLibraryModal';
+import { FeedbackModal } from './components/tools/FeedbackModal';
+import { AdminRouteView } from './components/admin/AdminRouteView';
 import { registerAndroidBackHandler } from './lib/platform/capacitorBridge';
+import { initGA4, trackCalculatorFeature, trackCalculatorPageView } from './lib/analytics/ga4Tracker';
 import { AI_SOLVER_ENABLED } from './config/features';
 import type { NavSection } from './types/calculator';
+
+function isAdminPath(pathname: string): boolean {
+  return /^\/admin(\/|$)/i.test(pathname);
+}
 
 const NAV_ITEMS: Array<{
   id: NavSection;
@@ -68,11 +76,35 @@ const WorkspaceShell: React.FC = () => {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [formulasOpen, setFormulasOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Initialize Google Analytics 4 (when VITE_GA4_MEASUREMENT_ID is configured)
+  useEffect(() => {
+    initGA4();
+  }, []);
+
+  // Track calculator navigation views & popular features in GA4
+  useEffect(() => {
+    if (activeSubTool === 'matrix') {
+      trackCalculatorPageView('/matrix', 'Matrix Calculator');
+      trackCalculatorFeature('Matrix Calculator');
+      return;
+    }
+    const navItem = NAV_ITEMS.find((n) => n.id === activeSection);
+    const label = navItem?.label || 'Home';
+    const path = activeSection === 'home' ? '/' : `/${activeSection}`;
+    trackCalculatorPageView(path, label);
+    trackCalculatorFeature(label);
+  }, [activeSection, activeSubTool]);
 
   // Android hardware back button handling
   useEffect(() => {
     return registerAndroidBackHandler(() => {
+      if (feedbackOpen) {
+        setFeedbackOpen(false);
+        return true;
+      }
       if (voiceOpen) {
         setVoiceOpen(false);
         return true;
@@ -99,7 +131,17 @@ const WorkspaceShell: React.FC = () => {
       }
       return false;
     });
-  }, [activeSection, activeSubTool, cameraOpen, formulasOpen, mobileMenuOpen, navigate, setActiveSubTool, voiceOpen]);
+  }, [
+    activeSection,
+    activeSubTool,
+    cameraOpen,
+    feedbackOpen,
+    formulasOpen,
+    mobileMenuOpen,
+    navigate,
+    setActiveSubTool,
+    voiceOpen,
+  ]);
 
   const openMatrix = () => {
     setActiveSubTool('matrix');
@@ -234,7 +276,7 @@ const WorkspaceShell: React.FC = () => {
         </nav>
 
         <div className="p-3 border-t border-slate-200 dark:border-slate-800/90 space-y-2">
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             <button
               type="button"
               onClick={() => setVoiceOpen(true)}
@@ -258,6 +300,15 @@ const WorkspaceShell: React.FC = () => {
               className="py-2 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-blue-500 flex items-center justify-center cursor-pointer"
             >
               <BookOpen className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setFeedbackOpen(true)}
+              title="Send Anonymous Feedback"
+              aria-label="Send Anonymous Feedback"
+              className="py-2 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-emerald-500 flex items-center justify-center cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4" />
             </button>
           </div>
           <div className="flex justify-center">
@@ -409,6 +460,17 @@ const WorkspaceShell: React.FC = () => {
                 <Mic className="w-5 h-5 text-blue-500" />
                 <span className="text-xs font-medium">Voice</span>
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setFeedbackOpen(true);
+                }}
+                className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center gap-1.5 cursor-pointer"
+              >
+                <MessageSquare className="w-5 h-5 text-emerald-500" />
+                <span className="text-xs font-medium">Feedback</span>
+              </button>
             </div>
 
             <div className="flex items-center justify-between pt-2">
@@ -433,17 +495,47 @@ const WorkspaceShell: React.FC = () => {
       <VoiceCalculatorModal open={voiceOpen} onClose={() => setVoiceOpen(false)} />
       <CameraScannerModal open={cameraOpen} onClose={() => setCameraOpen(false)} />
       <FormulaLibraryModal open={formulasOpen} onClose={() => setFormulasOpen(false)} />
+      <FeedbackModal
+        open={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
+        currentPage={activeSubTool || activeSection}
+      />
       <OfflineIndicator />
     </div>
   );
 };
 
 export default function App() {
+  const [adminRoute, setAdminRoute] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? isAdminPath(window.location.pathname) : false
+  );
+
+  useEffect(() => {
+    const onPopState = () => {
+      setAdminRoute(isAdminPath(window.location.pathname));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const exitAdminRoute = () => {
+    if (typeof window !== 'undefined' && isAdminPath(window.location.pathname)) {
+      window.history.pushState({}, '', '/');
+    }
+    setAdminRoute(false);
+  };
+
   return (
     <ErrorBoundary>
       <CalculatorProvider>
-        <SplashScreen />
-        <WorkspaceShell />
+        {adminRoute ? (
+          <AdminRouteView onBackToCalculator={exitAdminRoute} />
+        ) : (
+          <>
+            <SplashScreen />
+            <WorkspaceShell />
+          </>
+        )}
       </CalculatorProvider>
     </ErrorBoundary>
   );

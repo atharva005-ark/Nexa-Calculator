@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "FeedbackItem": {
+      "title": "Anonymous User Feedback",
+      "description": "Anonymous user ratings, suggestions, general comments, and bug reports submitted from NEXA Calculator.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["rating", "suggestion", "bug", "general"],
+          "description": "Category of feedback submitted by the user."
+        },
+        "rating": {
+          "type": "integer",
+          "description": "Star rating from 1 to 5."
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Calculator tool or area the feedback relates to."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 1500,
+          "description": "Feedback body text submitted by the user."
+        },
+        "page": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_/-]+$",
+          "description": "Active calculator section when feedback was submitted."
+        },
+        "deviceType": {
+          "type": "string",
+          "enum": ["mobile", "tablet", "desktop"],
+          "description": "Coarse viewport class of the submitting device."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["new", "reviewed", "resolved"],
+          "description": "Admin triage status. Always initialized to 'new'."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp recorded at creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp recorded when admin updates triage status."
+        }
+      },
+      "required": [
+        "type",
+        "rating",
+        "category",
+        "message",
+        "page",
+        "deviceType",
+        "status",
+        "createdAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "Administrator Registry Entry",
+      "description": "Optional trusted administrator UID record used for RBAC verification.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "description": "Administrator role identifier."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when administrator entry was created."
+        }
+      },
+      "required": ["role", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/feedback/{feedbackId}": {
+      "schema": {
+        "$ref": "#/entities/FeedbackItem"
+      },
+      "description": "Anonymous user feedback, ratings, suggestions, and bug reports. Public create with strict schema validation; admin-only read, triage update, and delete."
+    },
+    "/admins/{adminUid}": {
+      "schema": {
+        "$ref": "#/entities/AdminUser"
+      },
+      "description": "Admin role registry readable and manageable only by verified bootstrapped administrators."
+    }
+  }
+}

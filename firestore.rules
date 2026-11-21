@@ -1,0 +1,164 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global hardened helper primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Verify authenticated Google account with a verified email claim
+    function hasVerifiedGoogleAccount() {
+      return isSignedIn()
+        && 'firebase' in request.auth.token
+        && 'sign_in_provider' in request.auth.token.firebase
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && 'email_verified' in request.auth.token
+        && request.auth.token.email_verified == true
+        && 'email' in request.auth.token
+        && request.auth.token.email is string;
+    }
+
+    // Authorized administrator email allowlist (lowercase)
+    function isAuthorizedAdminEmail() {
+      return hasVerifiedGoogleAccount()
+        && request.auth.token.email.lower() in [
+          'katharva637@gmail.com'
+        ];
+    }
+
+    // Validation Blueprints synced verbatim with firebase-blueprint.json
+    function isValidFeedbackBase(data) {
+      return data.type in ['rating', 'suggestion', 'bug', 'general']
+        && data.rating is int
+        && data.rating >= 1
+        && data.rating <= 5
+        && data.category is string
+        && data.category.size() >= 1
+        && data.category.size() <= 40
+        && data.message is string
+        && data.message.size() >= 3
+        && data.message.size() <= 1500
+        && data.page is string
+        && data.page.size() >= 1
+        && data.page.size() <= 64
+        && data.page.matches('^[a-zA-Z0-9_/-]+$')
+        && data.deviceType in ['mobile', 'tablet', 'desktop']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidFeedbackCreate(data) {
+      return data.keys().hasAll([
+          'type',
+          'rating',
+          'category',
+          'message',
+          'page',
+          'deviceType',
+          'status',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'type',
+          'rating',
+          'category',
+          'message',
+          'page',
+          'deviceType',
+          'status',
+          'createdAt'
+        ])
+        && isValidFeedbackBase(data)
+        && data.status == 'new'
+        && data.createdAt == request.time;
+    }
+
+    function isValidFeedbackUpdate(data) {
+      return data.keys().hasAll([
+          'type',
+          'rating',
+          'category',
+          'message',
+          'page',
+          'deviceType',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'type',
+          'rating',
+          'category',
+          'message',
+          'page',
+          'deviceType',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidFeedbackBase(data)
+        && data.status in ['new', 'reviewed', 'resolved']
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['role', 'createdAt'])
+        && data.keys().hasOnly(['role', 'createdAt'])
+        && data.role == 'admin'
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
+    // Anonymous user feedback collection:
+    // - Public create with strict schema validation and zero PII (no read/list for normal users)
+    // - Strictly authorized verified Google administrator only for get, list, update, and delete
+    match /feedback/{feedbackId} {
+      allow create: if isValidId(feedbackId)
+        && isValidFeedbackCreate(incoming());
+
+      allow get: if isValidId(feedbackId) && isAuthorizedAdminEmail();
+
+      // Pillar 8: Zero get()/exists() lookups inside allow list
+      allow list: if isAuthorizedAdminEmail();
+
+      // Pillar 2 & 4: Validation helper wraps entire update + strict affectedKeys allowlist + immutable createdAt
+      allow update: if isSignedIn()
+        && isValidFeedbackUpdate(incoming())
+        && isValidId(feedbackId)
+        && isAuthorizedAdminEmail()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && incoming().createdAt == existing().createdAt;
+
+      allow delete: if isValidId(feedbackId) && isAuthorizedAdminEmail();
+    }
+
+    // Trusted Admin registry: strictly managed by the authorized administrator only
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && isAuthorizedAdminEmail();
+      allow list: if isAuthorizedAdminEmail();
+      allow create: if isValidId(adminUid)
+        && isAuthorizedAdminEmail()
+        && isValidAdminUser(incoming());
+      allow update: if false;
+      allow delete: if isValidId(adminUid) && isAuthorizedAdminEmail();
+    }
+  }
+}
